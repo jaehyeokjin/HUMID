@@ -1,0 +1,321 @@
+RAPTOR cfg file parse completed.
+NOTE: For boolean values, 0=False and 1=True
+
+Number of unique keys: nkey= 11
+i=   0  key=                           EVB3  key_content= (null)
+i=   1  key=                            WAT  key_content= (null)
+i=   2  key=                        WAT_WAT  key_content= (null)
+i=   3  key=                             OW  key_content= 1
+i=   4  key=                             HW  key_content= 2
+i=   5  key=                             OH  key_content= 3
+i=   6  key=                             HO  key_content= 4
+i=   7  key=                          OW-HW  key_content= 1
+i=   8  key=                          OH-HO  key_content= 2
+i=   9  key=                       HW-OW-HW  key_content= 1
+i=  10  key=                       HO-OH-HO  key_content= 2
+
+
+Starting to process OUTPUT.
+Processing OUTPUT complete.
+   Output Frequency:   freq= 0
+   Output if reaction: react= 1
+   Binary output:      bin= 0
+   Flush every output: forceflush= 1
+
+   Write CEC coordinates: bCenter= 1
+   Write # of states:     bNState= 1
+   Write state info:      bStates= 1
+   Write total energies:  bEnergy= 1
+   Write state energies:  bEneDecompose= 1
+
+==================================
+
+
+Starting to process molecule templates.
+Allocating memory for 2 kernels.
+
+0: name= H3O
+   nbond= 3  nangle= 3  ndihedral= 0  nimproper= 0  starting_rc= 1
+
+   Atoms in molecule
+   j= 0  atom_type= 3  atom_q= -0.320000  is_kernel= 1
+   j= 1  atom_type= 4  atom_q= 0.440000  is_kernel= 1
+   j= 2  atom_type= 4  atom_q= 0.440000  is_kernel= 1
+   j= 3  atom_type= 4  atom_q= 0.440000  is_kernel= 1
+
+   Bonds in molecule
+   j= 0  bond_atoms= 1 2  bond_type= 2
+   j= 1  bond_atoms= 1 3  bond_type= 2
+   j= 2  bond_atoms= 1 4  bond_type= 2
+
+   Angles in molecule
+   j= 0  angle_atoms= 2 1 3  angle_type= 2
+   j= 1  angle_atoms= 2 1 4  angle_type= 2
+   j= 2  angle_atoms= 3 1 4  angle_type= 2
+
+   Molecule has Center of Charge(COC).
+   Number of atoms in COC definition: nCOC= 4
+   Atom indicies: iCOC= 1 2 3 4
+   Processing molecule template complete
+
+1: name= H2O
+   nbond= 2  nangle= 1  ndihedral= 0  nimproper= 0  starting_rc= 0
+
+   Atoms in molecule
+   j= 0  atom_type= 1  atom_q= -0.820000  is_kernel= 1
+   j= 1  atom_type= 2  atom_q= 0.410000  is_kernel= 1
+   j= 2  atom_type= 2  atom_q= 0.410000  is_kernel= 1
+
+   Bonds in molecule
+   j= 0  bond_atoms= 1 2  bond_type= 1
+   j= 1  bond_atoms= 1 3  bond_type= 1
+
+   Angles in molecule
+   j= 0  angle_atoms= 2 1 3  angle_type= 1
+   Processing molecule template complete
+
+Checking atom information
+Processing ALL molecule templates complete
+
+==================================
+
+
+Starting to process top file.
+
+Processing top file complete
+
+==================================
+
+
+Starting to process reaction templates.
+Allocating memory for 1 reaction templates.
+
+0: name= H3O_H2O
+   Direction of particle migration: 0 (particles in H3O transferring to H2O).
+   Molecule A transformation H3O <--> H2O.
+   Molecule B transformation H2O <--> H3O.
+   Number of ways reaction can be attempted: nPath= 3.
+
+   Path 0:
+   +++++++++++++++++++++++++++++++
+   # of particles transferred= 1.
+      2 --> 2
+   # of particles remaining in molecule A= 3.
+      1 --> 1
+      3 --> 2
+      4 --> 3
+   # of particles remaining in molecule B= 3.
+      1 --> 1
+      2 --> 3
+      3 --> 4
+
+   Path 1:
+   +++++++++++++++++++++++++++++++
+   # of particles transferred= 1.
+      3 --> 2
+   # of particles remaining in molecule A= 3.
+      1 --> 1
+      2 --> 2
+      4 --> 3
+   # of particles remaining in molecule B= 3.
+      1 --> 1
+      2 --> 3
+      3 --> 4
+
+   Path 2:
+   +++++++++++++++++++++++++++++++
+   # of particles transferred= 1.
+      4 --> 2
+   # of particles remaining in molecule A= 3.
+      1 --> 1
+      2 --> 2
+      3 --> 3
+   # of particles remaining in molecule B= 3.
+      1 --> 1
+      2 --> 3
+      3 --> 4
+
+   Processing reaction template complete.
+
+Processing ALL reaction templates complete.
+
+==================================
+
+
+Starting to process reaction chains.
+   EVB3 --> EVB2 refinement: bRefineStates= 0
+   Extra off-diagonal couplings: bExtraCouplings= 1
+   
+
+Chain definitions for host molecule: H3O.
+
+   Chain 0:
+   +++++++++++++++++++++++++++++++
+   Index of atom searching for reactant: host= 2.
+   Target molecule: target= H2O.
+   Index of atom in target molecule: client= 1.
+   Maximum number of reaction hops attempted: shell_limit= 3.
+   Maximum allowed distance to target atom: distance_limit= 2.500000.
+   Reaction template used to update molecules: reaction= 1.
+   Reaction path used to update particles: path= 1.
+
+   Chain 1:
+   +++++++++++++++++++++++++++++++
+   Index of atom searching for reactant: host= 3.
+   Target molecule: target= H2O.
+   Index of atom in target molecule: client= 1.
+   Maximum number of reaction hops attempted: shell_limit= 3.
+   Maximum allowed distance to target atom: distance_limit= 2.500000.
+   Reaction template used to update molecules: reaction= 1.
+   Reaction path used to update particles: path= 2.
+
+   Chain 2:
+   +++++++++++++++++++++++++++++++
+   Index of atom searching for reactant: host= 4.
+   Target molecule: target= H2O.
+   Index of atom in target molecule: client= 1.
+   Maximum number of reaction hops attempted: shell_limit= 3.
+   Maximum allowed distance to target atom: distance_limit= 2.500000.
+   Reaction template used to update molecules: reaction= 1.
+   Reaction path used to update particles: path= 3.
+
+   Processing chain definitions complete.
+   
+
+Chain definitions for host molecule: H2O.
+
+   Chain 0:
+   +++++++++++++++++++++++++++++++
+   Index of atom searching for reactant: host= 2.
+   Target molecule: target= H2O.
+   Index of atom in target molecule: client= 1.
+   Maximum number of reaction hops attempted: shell_limit= 3.
+   Maximum allowed distance to target atom: distance_limit= 2.500000.
+   Reaction template used to update molecules: reaction= 1.
+   Reaction path used to update particles: path= 2.
+
+   Chain 1:
+   +++++++++++++++++++++++++++++++
+   Index of atom searching for reactant: host= 3.
+   Target molecule: target= H2O.
+   Index of atom in target molecule: client= 1.
+   Maximum number of reaction hops attempted: shell_limit= 3.
+   Maximum allowed distance to target atom: distance_limit= 2.500000.
+   Reaction template used to update molecules: reaction= 1.
+   Reaction path used to update particles: path= 3.
+
+   Processing chain definitions complete.
+
+Processing ALL chain definitions complete.
+
+==================================
+
+
+Starting to process off-diagonal couplings.
+
+   Off-diagonal coupling for reaction template: H3O_H2O.
+   +++++++++++++++++++++++++++++++
+   Type of off-diagonal coupling: PT.
+   Starting to process off-diagonal.
+   Identity of particle O of hydronium: molecule= 1  index= 1.
+   Identity of particle O of water:     molecule= 2  index= 1.
+   Identity of particle H+:             molecule= 2  index= 2.
+   Using symmetric coordinate.
+
+   A_GEO(R,q) = f(R) * g(q)
+              = f_G(R) * [f_T(R) + f_E(R)] * g(q)
+
+   q = 0.5 * (RO1 + RO2) - R_H+
+
+   g(q) = e^-(g * q^2)
+      g= 1.783170
+
+   f_G(R) = 1 + P0 * e^-(k * (R - D))
+      P0= 0.155905
+      k= 5.066447
+      D= 2.862169
+
+   f_T(R) = 0.5 * (1 - tanh[B * (R - R0)])
+      B= 5.239413
+      R0= 2.942597
+
+   f_E(R) = P1 * e^(-a * (R - r))
+      P1= 7.614767
+      a= 7.406262
+      r= 1.800000
+
+   Off-diagonal definition: VIJ= (VIJ_CONST + V_EX) * A_GEO.
+
+   VIJ_CONST= -21.064268
+
+   Available methods for V_EX: 0= None, 1= K-Space, 2= Debye, 3= Wolf, 4= CGIS, 5= Electrode.
+   Method selected for V_EX: is_Vij_ex= 1 (Nonzero values must match across all off-diagonals).
+   First molecule in exchange complex is H2O: type= 2.
+   Second molecule in exchange complex is H3O: type= 1.
+
+   Number of atoms in first molecule: n_A_exch= 3.
+   i= 0  q_A_exch= -0.089546  q_A_save= -0.820000
+   i= 1  q_A_exch= 0.025268  q_A_save= 0.410000
+   i= 2  q_A_exch= 0.025268  q_A_save= 0.410000
+
+   Number of atoms in second molecule: n_B_exch= 4.
+   i= 0  q_B_exch= -0.089546  q_B_save= -0.320000
+   i= 1  q_B_exch= 0.078018  q_B_save= 0.440000
+   i= 2  q_B_exch= 0.025268  q_B_save= 0.440000
+   i= 3  q_B_exch= 0.025268  q_B_save= 0.440000
+   Finished processing off-diagonal.
+
+Processing ALL off-diagonal couplings complete.
+
+==================================
+
+
+Starting to process diabatic shifts (a.k.a. repulsions).
+Allocating memory for 1 repulsions.
+
+   Starting to process repulsion: Hydronium.
+   +++++++++++++++++++++++++++++++
+   This interaction computed every state with this molecule present: etp_center= H3O.
+   Target atom type of hydronium interaction: 1.
+
+   VJJ = VOO(ROO,q) + VHO(RHO)
+
+   VOO(R,q) = B * e^(-b1 * (R - d_OO)) * \sum e^(-b2 * q^2)
+      B= 9.917841
+      b1= 1.102152
+      d_OO= 2.400000
+      b2= 2.006625
+
+   VHO(R) = C * e^(-c * (R - dOH))
+      C= 5.091732
+      c= 8.992002
+      dOH= 1.000000
+
+   Parameters for OO switching function: rs= 2.587470  rc= 2.979440.
+   Parameters for HO switching function: rs= 1.591925  rc= 2.594177.
+   Finished processing repulsion.
+
+Processing ALL diabatic shifts complete.
+
+==================================
+
+
+Starting to process extended segments (a.k.a controls for add-on features).
+
+   Starting to process segment: cec_v2.
+   +++++++++++++++++++++++++++++++
+   RSW= 1.400000  DWS= 0.050000
+   i= 0  type= 0  weight= 0.000000
+   i= 1  type= 1  weight= 2.000000
+   i= 2  type= 2  weight= 0.000000
+   i= 3  type= 1  weight= 2.000000
+   i= 4  type= 2  weight= 0.000000
+
+   Processing segment complete.
+
+Processing ALL extensions complete.
+
+==================================
+
+
+Processing cfg file complete.

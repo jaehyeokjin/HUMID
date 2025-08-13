@@ -1,0 +1,47 @@
+variable        output_freq string 5
+variable        input string lmp 
+
+units		real
+atom_style	full
+
+pair_style	lj/cut/coul/long 9.0
+pair_modify     mix arithmetic
+
+bond_style      hybrid harmonic morse
+angle_style     harmonic
+dihedral_style  none
+improper_style  none
+
+kspace_style	ewald 1e-4
+
+#read_data       ${input}.data
+read_restart   evb.restart
+
+# EVB 3.2 Force Field
+bond_coeff      1  harmonic 529.581    1.012                 # OW-HW
+bond_coeff      2  morse    79.086356  2.083387     0.98     # O*-H*
+angle_coeff     1  37.95    113.24      # HW-OW-HW
+angle_coeff     2  38.7434  111.7269    # H*-O*-H*
+pair_coeff      2  3  3.0       1.6           # HW - O*
+
+neighbor	0.5 bin
+neigh_modify	every 1 delay 1 check no
+
+reset_timestep 0
+
+timestep	0.5
+
+thermo_style	custom step temp pe etotal
+thermo          1000	
+
+fix             1 all evb in.evb evb.out ${input}.top
+fix             2 all nvt temp 298 298 100
+#fix             3 all temp/berendsen 300.0 300.0 200.0
+
+dump            10 all custom ${output_freq} lmp.lammpstrj id type x y z #fx fy fz
+
+restart 20000 evb_NVT.restart
+
+run    1000000
+
+write_restart   evb_NVT.restart
