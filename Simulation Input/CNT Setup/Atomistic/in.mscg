@@ -1,0 +1,89 @@
+# MeOH with Neopentane Simulations
+
+units		real
+atom_style	full
+boundary        p p p
+ 
+read_data	mscg.data
+#tells lammps what kind of interactions are in the system
+pair_style	lj/charmm/coul/long 9.0 10.0
+pair_modify 	tail yes
+bond_style      harmonic
+angle_style     harmonic
+kspace_style    ewald 0.0001
+
+#This is where the non-bonded parameters go
+#pair_coeff tells lammps that it is a non-bonded parameter
+#the first two numbers tell you what type the interaction is between
+#the third number is epsilon
+#the fourth number is sigma
+
+pair_coeff	1   1   0.086   3.40
+pair_coeff      2   2   0.000   0.00
+pair_coeff      3   3   0.1554253 3.165492
+pair_modify     mix geometric
+#this is where you set the partial charges for each type
+
+set type 1 charge 0.0000
+set type 2 charge 0.4100
+set type 3 charge -0.8200
+
+#this is where the bonded parameters go
+#bond_coeff tells lammps that it is a bonded paramter
+#the first number says that we are defining parameters for this bond type
+#the third number is the spring constant (no 1/2)
+#the fourth number is the equilibrium distance
+
+bond_coeff      1       5000.000  1.421
+bond_coeff      2       1059.162  1.012
+#this is where the angle parameters go
+#angle_coeff tells lammps that it is a bonded paramter
+#the first number says that we are defining parameters for this bond type
+#the third number is the spring constant (no 1/2)
+#the fourth number is the equilibrium distance
+
+angle_coeff     1       75.90   113.24
+
+# tells lammps how to bunch up the atoms when calculating forces
+# do not modify
+# neighbor	5.0 bin
+# neigh_modify 	delay 0
+neighbor        2.0 multi
+neigh_modify  	delay 0
+# neigh_modify    every 2 delay 4 check yes
+thermo_style    multi
+
+variable        input index in.mscg
+variable        sname index mscg
+group           carbon type 1
+
+#dump            1 all atom 25 ${sname}.min.lammpstrj
+#dump_modify     1 image yes scale yes
+#thermo          10
+#min_style       sd
+#minimize        1.0e-4 1.0e-4 500 5000
+#min_style       cg
+#minimize        1.0e-4 1.0e-4 500 5000
+#minimize        1.0e-4 1.0e-4 500 5000
+#undump          1
+#timestep        1.0
+#reset_timestep  0
+
+#tells lammps the delta t to use
+
+velocity        all create 298.0 492849 dist gaussian
+#fix		2 carbon setforce 0.0 0.0 0.0
+fix             3 all nvt temp 298.0 298.0 100.0
+thermo          1000
+thermo_style    custom step etotal ke temp pe ebond eangle edihed eimp evdwl ecoul elong press vol 
+thermo_modify   line multi
+restart         1000000 ${sname}_nvt.*.restart
+dump            1 all custom 1000 ${sname}_nvt.lammpstrj id type xs ys zs vx vy vz fx fy fz
+dump_modify     1 sort id
+run             5000000
+unfix		3
+#unfix		2
+#unfix		shakeH
+undump          1
+
+
