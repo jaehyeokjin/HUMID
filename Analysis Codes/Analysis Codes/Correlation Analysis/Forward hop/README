@@ -1,0 +1,3 @@
+This one caculates the "accumulation function"
+1. Run print_type.x (after compiling) to the trajectory
+2. Use correct.py and cut 150 ps 
