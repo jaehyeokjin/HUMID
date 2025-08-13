@@ -1,0 +1,10 @@
+set terminal wxt size 1320,850 enhanced font 'Whitney,42' persist
+
+set border lw 4
+set termoption enhanced
+set encoding iso_8859_1
+set xlabel 'Time (ps)'
+set ylabel 'Forward Hop'
+set xr [:500]
+set xtics 100
+pl "histo_aa.out" every 30 u ($1/1000):2 w l lw 9 lc rgb '#fa8072' title 'All-Atom', "histo_newucg.out" every 20 u ($1/1000):2 w l lw 9 lc rgb '#1e90ff' title 'HUMID'
