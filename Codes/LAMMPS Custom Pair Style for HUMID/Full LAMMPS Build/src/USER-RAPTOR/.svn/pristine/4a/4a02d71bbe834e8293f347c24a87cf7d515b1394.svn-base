@@ -1,0 +1,4 @@
+The two plumed versions currently supported in RAPTOR are v1.2 and v2.0. One simply needs to manually copy the fix_plumed files into the LAMMPS source directory and recompile.
+
+It is encouraged to first trying installing plumed without USER-RAPTOR installed to isolate potential RAPTOR+PLUMED issues.
+

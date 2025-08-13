@@ -1,0 +1,44 @@
+/* ----------------------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#include "mpi.h"
+#include "lammps.h"
+#include "input.h"
+#include "string.h"
+
+using namespace LAMMPS_NS;
+
+/* ----------------------------------------------------------------------
+   main program to drive LAMMPS
+------------------------------------------------------------------------- */
+
+int main(int argc, char **argv)
+{
+
+#if defined (_OPENMP)
+  // AWGL: Allow for MPI calls from threads. Used in evb_pppm/omp. 
+  int provided;
+  int cc = MPI_Init_thread(&argc, &argv, MPI_THREAD_MULTIPLE, &provided); // only used in off-diagonal; causes trouble on some machines
+  //  int cc = MPI_Init_thread(&argc, &argv, MPI_THREAD_SINGLE, &provided); // if omp causing problem, switch to MPI_THREAD_SINGLE
+#else
+  MPI_Init(&argc,&argv);
+#endif
+
+  LAMMPS *lammps = new LAMMPS(argc,argv,MPI_COMM_WORLD);
+
+  lammps->input->file();
+  delete lammps;
+
+  MPI_Barrier(MPI_COMM_WORLD);
+  MPI_Finalize();
+}

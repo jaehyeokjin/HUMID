@@ -1,0 +1,1856 @@
+#define LAMMPS_VERSION "1 Mar 2016"
+
+#ifdef _CRACKER_KSPACE
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifndef LMP_KSPACE_H
+#define LMP_KSPACE_H
+
+#include "pointers.h"
+
+#ifdef FFT_SINGLE
+typedef float FFT_SCALAR;
+#define MPI_FFT_SCALAR MPI_FLOAT
+#else
+typedef double FFT_SCALAR;
+#define MPI_FFT_SCALAR MPI_DOUBLE
+#endif
+
+namespace LAMMPS_NS {
+
+class KSpace : protected Pointers {
+  friend class ThrOMP;
+  friend class FixOMP;
+ public:
+  double energy;                 // accumulated energies
+  double energy_1,energy_6;
+  double virial[6];              // accumlated virial
+  double *eatom,**vatom;         // accumulated per-atom energy/virial
+  double e2group;                // accumulated group-group energy
+  double f2group[3];             // accumulated group-group force
+  int triclinic_support;         // 1 if supports triclinic geometries
+
+  int ewaldflag;                 // 1 if a Ewald solver
+  int pppmflag;                  // 1 if a PPPM solver
+  int msmflag;                   // 1 if a MSM solver
+  int dispersionflag;            // 1 if a LJ/dispersion solver
+  int tip4pflag;                 // 1 if a TIP4P solver
+  int dipoleflag;                // 1 if a dipole solver
+  int differentiation_flag;
+  int neighrequest_flag;         // used to avoid obsolete construction
+                                 // of neighbor lists
+  int mixflag;                   // 1 if geometric mixing rules are enforced
+                                 // for LJ coefficients
+  int slabflag;
+  int scalar_pressure_flag;      // 1 if using MSM fast scalar pressure
+  double slab_volfactor;
+
+  int warn_nonneutral;           // 0 = error if non-neutral system
+                                 // 1 = warn once if non-neutral system
+                                 // 2 = warn, but already warned
+  int warn_nocharge;             // 0 = already warned
+                                 // 1 = warn if zero charge
+
+  int order,order_6,order_allocated;
+  double accuracy;                  // accuracy of KSpace solver (force units)
+  double accuracy_absolute;         // user-specifed accuracy in force units
+  double accuracy_relative;         // user-specified dimensionless accuracy
+                                    // accurary = acc_rel * two_charge_force
+  double accuracy_real_6;           // real space accuracy for
+                                    // dispersion solver (force units)
+  double accuracy_kspace_6;         // reciprocal space accuracy for
+                                    // dispersion solver (force units)
+  int auto_disp_flag;		    // use automatic paramter generation for pppm/disp
+  double two_charge_force;          // force in user units of two point
+                                    // charges separated by 1 Angstrom
+
+  double g_ewald,g_ewald_6;
+  int nx_pppm,ny_pppm,nz_pppm;           // global FFT grid for Coulombics
+  int nx_pppm_6,ny_pppm_6,nz_pppm_6;     // global FFT grid for dispersion
+  int nx_msm_max,ny_msm_max,nz_msm_max;
+
+  int group_group_enable;         // 1 if style supports group/group calculation
+
+  unsigned int datamask;
+  unsigned int datamask_ext;
+
+  // KOKKOS host/device flag and data masks
+  ExecutionSpace execution_space;
+  unsigned int datamask_read,datamask_modify;
+
+  int compute_flag;               // 0 if skip compute()
+  int fftbench;                   // 0 if skip FFT timing
+  int collective_flag;            // 1 if use MPI collectives for FFT/remap
+  int stagger_flag;               // 1 if using staggered PPPM grids
+
+  double splittol;                // tolerance for when to truncate splitting
+
+  KSpace(class LAMMPS *, int, char **);
+  virtual ~KSpace();
+  void triclinic_check();
+  void modify_params(int, char **);
+  void *extract(const char *);
+  void compute_dummy(int, int);
+
+  // triclinic
+
+  void x2lamdaT(double *, double *);
+  void lamda2xT(double *, double *);
+  void lamda2xvector(double *, double *);
+  void kspacebbox(double, double *);
+
+  // public so can be called by commands that change charge
+
+  void qsum_qsq();
+
+  // general child-class methods
+
+  virtual void init() = 0;
+  virtual void setup() = 0;
+  virtual void setup_grid() {};
+  virtual void compute(int, int) = 0;
+  virtual void compute_group_group(int, int, int) {};
+
+  virtual void pack_forward(int, FFT_SCALAR *, int, int *) {};
+  virtual void unpack_forward(int, FFT_SCALAR *, int, int *) {};
+  virtual void pack_reverse(int, FFT_SCALAR *, int, int *) {};
+  virtual void unpack_reverse(int, FFT_SCALAR *, int, int *) {};
+
+  virtual int timing(int, double &, double &) {return 0;}
+  virtual int timing_1d(int, double &) {return 0;}
+  virtual int timing_3d(int, double &) {return 0;}
+  virtual double memory_usage() {return 0.0;}
+
+/* ----------------------------------------------------------------------
+   compute gamma for MSM and pair styles
+   see Eq 4 from Parallel Computing 35 (2009) 164177
+------------------------------------------------------------------------- */
+
+  double gamma(const double &rho) const
+  {
+    if (rho <= 1.0) {
+      const int split_order = order/2;
+      const double rho2 = rho*rho;
+      double g = gcons[split_order][0];
+      double rho_n = rho2;
+      for (int n = 1; n <= split_order; n++) {
+        g += gcons[split_order][n]*rho_n;
+        rho_n *= rho2;
+      }
+      return g;
+    } else return (1.0/rho);
+  }
+
+/* ----------------------------------------------------------------------
+   compute the derivative of gamma for MSM and pair styles
+   see Eq 4 from Parallel Computing 35 (2009) 164-177
+------------------------------------------------------------------------- */
+
+  double dgamma(const double &rho) const
+  {
+    if (rho <= 1.0) {
+      const int split_order = order/2;
+      const double rho2 = rho*rho;
+      double dg = dgcons[split_order][0]*rho;
+      double rho_n = rho*rho2;
+      for (int n = 1; n < split_order; n++) {
+        dg += dgcons[split_order][n]*rho_n;
+        rho_n *= rho2;
+      }
+      return dg;
+    } else return (-1.0/rho/rho);
+  }
+
+  double **get_gcons() { return gcons; }
+  double **get_dgcons() { return dgcons; }
+
+ public:
+  int gridflag,gridflag_6;
+  int gewaldflag,gewaldflag_6;
+  int minorder,overlap_allowed;
+  int adjust_cutoff_flag;
+  int suffix_flag;                  // suffix compatibility flag
+  bigint natoms_original;
+  double scale,qqrd2e;
+  double qsum,qsqsum,q2;
+  double **gcons,**dgcons;          // accumulated per-atom energy/virial
+
+  int evflag,evflag_atom;
+  int eflag_either,eflag_global,eflag_atom;
+  int vflag_either,vflag_global,vflag_atom;
+  int maxeatom,maxvatom;
+
+  int kewaldflag;                   // 1 if kspace range set for Ewald sum
+  int kx_ewald,ky_ewald,kz_ewald;   // kspace settings for Ewald sum
+
+  void pair_check();
+  void ev_setup(int, int);
+  double estimate_table_accuracy(double, double);
+};
+
+}
+
+#endif
+
+/* ERROR/WARNING messages:
+
+E: KSpace style does not yet support triclinic geometries
+
+The specified kspace style does not allow for non-orthogonal
+simulation boxes.
+
+E: KSpace solver requires a pair style
+
+No pair style is defined.
+
+E: KSpace style is incompatible with Pair style
+
+Setting a kspace style requires that a pair style with matching
+long-range Coulombic or dispersion components be used.
+
+W: Using kspace solver on system with no charge
+
+Self-explanatory.
+
+E: System is not charge neutral, net charge = %g
+
+The total charge on all atoms on the system is not 0.0.
+For some KSpace solvers this is an error.
+
+W: System is not charge neutral, net charge = %g
+
+The total charge on all atoms on the system is not 0.0.
+For some KSpace solvers this is only a warning.
+
+W: For better accuracy use 'pair_modify table 0'
+
+The user-specified force accuracy cannot be achieved unless the table
+feature is disabled by using 'pair_modify table 0'.
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Bad kspace_modify slab parameter
+
+Kspace_modify value for the slab/volume keyword must be >= 2.0.
+
+W: Kspace_modify slab param < 2.0 may cause unphysical behavior
+
+The kspace_modify slab parameter should be larger to insure periodic
+grids padded with empty space do not overlap.
+
+E: Bad kspace_modify kmax/ewald parameter
+
+Kspace_modify values for the kmax/ewald keyword must be integers > 0
+
+E: Kspace_modify eigtol must be smaller than one
+
+Self-explanatory.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_GRIDCOMM
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifndef LMP_GRIDCOMM_H
+#define LMP_GRIDCOMM_H
+
+#include "pointers.h"
+
+#ifdef FFT_SINGLE
+typedef float FFT_SCALAR;
+#define MPI_FFT_SCALAR MPI_FLOAT
+#else
+typedef double FFT_SCALAR;
+#define MPI_FFT_SCALAR MPI_DOUBLE
+#endif
+
+namespace LAMMPS_NS {
+
+class GridComm : protected Pointers {
+ public:
+  GridComm(class LAMMPS *, MPI_Comm, int, int,
+           int, int, int, int, int, int,
+           int, int, int, int, int, int,
+           int, int, int, int, int, int);
+  GridComm(class LAMMPS *, MPI_Comm, int, int,
+           int, int, int, int, int, int,
+           int, int, int, int, int, int,
+           int, int, int, int, int, int,
+           int, int, int, int, int, int);
+  ~GridComm();
+  void ghost_notify();
+  int ghost_overlap();
+  void setup();
+  void forward_comm(class KSpace *, int);
+  void reverse_comm(class KSpace *, int);
+  double memory_usage();
+
+ public:
+  int me;
+  int nforward,nreverse;
+  MPI_Comm gridcomm;
+  MPI_Request request;
+
+  // in = inclusive indices of 3d grid chunk that I own
+  // out = inclusive indices of 3d grid chunk I own plus ghosts I use
+  // proc = 6 neighbor procs that surround me
+  // ghost = # of my owned grid planes needed from me
+  //         by each of 6 neighbor procs to become their ghost planes
+
+  int inxlo,inxhi,inylo,inyhi,inzlo,inzhi;
+  int outxlo,outxhi,outylo,outyhi,outzlo,outzhi;
+  int outxlo_max,outxhi_max,outylo_max,outyhi_max,outzlo_max,outzhi_max;
+  int procxlo,procxhi,procylo,procyhi,proczlo,proczhi;
+  int ghostxlo,ghostxhi,ghostylo,ghostyhi,ghostzlo,ghostzhi;
+
+  int nbuf;
+  FFT_SCALAR *buf1,*buf2;
+
+  struct Swap {
+    int sendproc;       // proc to send to for forward comm
+    int recvproc;       // proc to recv from for forward comm
+    int npack;          // # of datums to pack
+    int nunpack;        // # of datums to unpack
+    int *packlist;      // 3d array offsets to pack
+    int *unpacklist;    // 3d array offsets to unpack
+  };
+
+  int nswap;
+  Swap *swap;
+
+  int indices(int *&, int, int, int, int, int, int);
+};
+
+}
+
+#endif
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_NEIGHBOR
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifndef LMP_NEIGHBOR_H
+#define LMP_NEIGHBOR_H
+
+#include "pointers.h"
+
+namespace LAMMPS_NS {
+
+class Neighbor : protected Pointers {
+  friend class Cuda;
+
+ public:
+  int style;                       // 0,1,2 = nsq, bin, multi
+  int every;                       // build every this many steps
+  int delay;                       // delay build for this many steps
+  int dist_check;                  // 0 = always build, 1 = only if 1/2 dist
+  int ago;                         // how many steps ago neighboring occurred
+  int pgsize;                      // size of neighbor page
+  int oneatom;                     // max # of neighbors for one atom
+  int includegroup;                // only build pairwise lists for this group
+  int build_once;                  // 1 if only build lists once per run
+  int cudable;                     // GPU <-> CPU communication flag for CUDA
+
+  double skin;                     // skin distance
+  double cutneighmin;              // min neighbor cutoff for all type pairs
+  double cutneighmax;              // max neighbor cutoff for all type pairs
+  double *cuttype;                 // for each type, max neigh cut w/ others
+
+  int binsizeflag;                 // user-chosen bin size
+  double binsize_user;             // set externally by some accelerator pkgs
+
+  bigint ncalls;                   // # of times build has been called
+  bigint ndanger;                  // # of dangerous builds
+  bigint lastcall;                 // timestep of last neighbor::build() call
+
+  int nrequest;                    // requests for pairwise neighbor lists
+  class NeighRequest **requests;   // from Pair, Fix, Compute, Command classes
+  int maxrequest;
+
+  int old_style,old_nrequest;      // previous run info to avoid
+  int old_triclinic,old_pgsize;    // re-creation of pairwise neighbor lists
+  int old_oneatom,old_every;
+  int old_delay,old_check;
+  double old_cutoff;
+
+  class NeighRequest **old_requests;
+
+  int nlist;                       // pairwise neighbor lists
+  class NeighList **lists;
+
+  int nbondlist;                   // list of bonds to compute
+  int **bondlist;
+  int nanglelist;                  // list of angles to compute
+  int **anglelist;
+  int ndihedrallist;               // list of dihedrals to compute
+  int **dihedrallist;
+  int nimproperlist;               // list of impropers to compute
+  int **improperlist;
+
+  int cluster_check;               // 1 if check bond/angle/etc satisfies minimg
+
+  // USER-DPD package
+
+  int *ssa_airnum;              // AIR number of each atom for SSA in USER-DPD
+
+  // methods
+
+  Neighbor(class LAMMPS *);
+  virtual ~Neighbor();
+  virtual void init();
+  int request(void *, int instance=0);  // another class requests a neigh list
+  void print_lists_of_lists();      // debug print out
+  int decide();                     // decide whether to build or not
+  virtual int check_distance();     // check max distance moved since last build
+  void setup_bins();                // setup bins based on box and cutoff
+  virtual void build(int topoflag=1);  // create all neighbor lists (pair,bond)
+  virtual void build_topology();    // create all topology neighbor lists
+  void build_one(class NeighList *list,
+                 int preflag=0);    // create a single one-time neigh list
+  void set(int, char **);           // set neighbor style and skin distance
+  void modify_params(int, char**);  // modify parameters that control builds
+  bigint memory_usage();
+  int exclude_setting();
+  void exclusion_group_group_delete(int, int);  // rm a group-group exclusion
+
+  // USER-DPD package
+
+  void assign_ssa_airnums();       // set ssa_airnum values
+
+ public:
+  int me,nprocs;
+
+  int maxatom;                     // size of atom-based NeighList arrays
+  int maxbond,maxangle,maxdihedral,maximproper;   // size of bond lists
+  int maxwt;                       // max weighting factor applied + 1
+
+  int must_check;                  // 1 if must check other classes to reneigh
+  int restart_check;               // 1 if restart enabled, 0 if no
+  int fix_check;                   // # of fixes that induce reneigh
+  int *fixchecklist;               // which fixes to check
+
+  double **cutneighsq;             // neighbor cutneigh sq for each type pair
+  double **cutneighghostsq;        // neighbor cutnsq for each ghost type pair
+  double cutneighmaxsq;            // cutneighmax squared
+  double *cuttypesq;               // cuttype squared
+
+  double triggersq;                // trigger = build when atom moves this dist
+
+  double **xhold;                      // atom coords at last neighbor build
+  int maxhold;                         // size of xhold array
+  int boxcheck;                        // 1 if need to store box size
+  double boxlo_hold[3],boxhi_hold[3];  // box size at last neighbor build
+  double corners_hold[8][3];           // box corners at last neighbor build
+
+  int binatomflag;                 // bin atoms or not when build neigh list
+                                   // turned off by build_one()
+
+  int nbinx,nbiny,nbinz;           // # of global bins
+  int *bins;                       // ptr to next atom in each bin
+  int maxbin;                      // size of bins array
+
+  int *binhead;                    // ptr to 1st atom in each bin
+  int maxhead;                     // size of binhead array
+
+  int mbins;                       // # of local bins and offset
+  int mbinx,mbiny,mbinz;
+  int mbinxlo,mbinylo,mbinzlo;
+
+  double binsizex,binsizey,binsizez;  // actual bin sizes and inverse sizes
+  double bininvx,bininvy,bininvz;
+
+  int sx,sy,sz,smax;               // bin stencil extents
+
+  int dimension;                   // 2/3 for 2d/3d
+  int triclinic;                   // 0 if domain is orthog, 1 if triclinic
+  int newton_pair;                 // 0 if newton off, 1 if on for pairwise
+
+  double *bboxlo,*bboxhi;          // ptrs to full domain bounding box
+  double (*corners)[3];            // ptr to 8 corners of triclinic box
+
+  double inner[2],middle[2];       // rRESPA cutoffs for extra lists
+  double cut_inner_sq;                   // outer cutoff for inner neighbor list
+  double cut_middle_sq;            // outer cutoff for middle neighbor list
+  double cut_middle_inside_sq;     // inner cutoff for middle neighbor list
+
+  int special_flag[4];             // flags for 1-2, 1-3, 1-4 neighbors
+
+  int anyghostlist;                // 1 if any non-occasional list
+                                   // stores neighbors of ghosts
+
+  int exclude;                     // 0 if no type/group exclusions, 1 if yes
+
+  int nex_type;                    // # of entries in type exclusion list
+  int maxex_type;                  // max # in type list
+  int *ex1_type,*ex2_type;         // pairs of types to exclude
+  int **ex_type;                   // 2d array of excluded type pairs
+
+  int nex_group;                   // # of entries in group exclusion list
+  int maxex_group;                 // max # in group list
+  int *ex1_group,*ex2_group;       // pairs of group #'s to exclude
+  int *ex1_bit,*ex2_bit;           // pairs of group bits to exclude
+
+  int nex_mol;                     // # of entries in molecule exclusion list
+  int maxex_mol;                   // max # in molecule list
+  int *ex_mol_group;               // molecule group #'s to exclude
+  int *ex_mol_bit;                 // molecule group bits to exclude
+
+  int nblist,nglist,nslist;    // # of pairwise neigh lists of various kinds
+  int *blist;                  // lists to build every reneighboring
+  int *glist;                  // lists to grow atom arrays every reneigh
+  int *slist;                  // lists to grow stencil arrays every reneigh
+
+  // USER-DPD package
+
+  int len_ssa_airnum;        // length of ssa_airnum array
+  int *bins_ssa;             // ptr to next atom in each bin used by SSA
+  int maxbin_ssa;            // size of bins array used by SSA
+  int *binhead_ssa;          // ptr to 1st atom in each bin used by SSA
+  int *gbinhead_ssa;         // ptr to 1st ghost atom in each bin used by SSA
+  int maxhead_ssa;           // size of binhead array used by SSA
+
+  // methods
+
+  void bin_atoms();                     // bin all atoms
+  double bin_distance(int, int, int);   // distance between binx
+  int coord2bin(double *);              // mapping atom coord to a bin
+  int coord2bin(double *, int &, int &, int&); // ditto
+
+  int exclusion(int, int, int,
+                int, int *, tagint *) const;    // test for pair exclusion
+
+  virtual void choose_build(int, class NeighRequest *);
+  void choose_stencil(int, class NeighRequest *);
+
+  // dummy functions provided by NeighborKokkos
+
+  virtual void init_cutneighsq_kokkos(int) {}
+  virtual int init_lists_kokkos() {return 0;}
+  virtual void init_list_flags1_kokkos(int) {}
+  virtual void init_list_flags2_kokkos(int) {}
+  virtual void init_ex_type_kokkos(int) {}
+  virtual void init_ex_bit_kokkos() {}
+  virtual void init_ex_mol_bit_kokkos() {}
+  virtual void init_list_grow_kokkos(int) {}
+  virtual void build_kokkos(int) {}
+  virtual void setup_bins_kokkos(int) {}
+  virtual void init_topology_kokkos() {}
+  virtual void build_topology_kokkos() {}
+
+  int copymode;
+
+  // pairwise build functions
+
+  typedef void (Neighbor::*PairPtr)(class NeighList *);
+  PairPtr *pair_build;
+
+  void half_nsq_no_newton(class NeighList *);
+  void half_nsq_no_newton_ghost(class NeighList *);
+  void half_nsq_newton(class NeighList *);
+
+  void half_bin_no_newton(class NeighList *);
+  void half_bin_no_newton_ghost(class NeighList *);
+  void half_bin_newton(class NeighList *);
+  void half_bin_newton_tri(class NeighList *);
+
+  void half_multi_no_newton(class NeighList *);
+  void half_multi_newton(class NeighList *);
+  void half_multi_newton_tri(class NeighList *);
+
+  void full_nsq(class NeighList *);
+  void full_nsq_ghost(class NeighList *);
+  void full_bin(class NeighList *);
+  void full_bin_ghost(class NeighList *);
+  void full_multi(class NeighList *);
+
+  void half_from_full_no_newton(class NeighList *);
+  void half_from_full_newton(class NeighList *);
+  void skip_from(class NeighList *);
+  void skip_from_granular(class NeighList *);
+  void skip_from_respa(class NeighList *);
+  void copy_from(class NeighList *);
+
+  void granular_nsq_no_newton(class NeighList *);
+  void granular_nsq_newton(class NeighList *);
+  void granular_bin_no_newton(class NeighList *);
+  void granular_bin_newton(class NeighList *);
+  void granular_bin_newton_tri(class NeighList *);
+
+  void respa_nsq_no_newton(class NeighList *);
+  void respa_nsq_newton(class NeighList *);
+  void respa_bin_no_newton(class NeighList *);
+  void respa_bin_newton(class NeighList *);
+  void respa_bin_newton_tri(class NeighList *);
+
+  // include prototypes for multi-threaded neighbor lists
+  // builds or their corresponding dummy versions
+
+#define LMP_INSIDE_NEIGHBOR_H
+#include "accelerator_omp.h"
+#include "accelerator_intel.h"
+#undef LMP_INSIDE_NEIGHBOR_H
+
+  // pairwise stencil creation functions
+
+  typedef void (Neighbor::*StencilPtr)(class NeighList *, int, int, int);
+  StencilPtr *stencil_create;
+
+  void stencil_half_bin_2d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_ghost_bin_2d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_bin_3d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_ghost_bin_3d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_bin_2d_newton(class NeighList *, int, int, int);
+  void stencil_half_bin_3d_newton(class NeighList *, int, int, int);
+  void stencil_half_bin_2d_newton_tri(class NeighList *, int, int, int);
+  void stencil_half_bin_3d_newton_tri(class NeighList *, int, int, int);
+
+  void stencil_half_multi_2d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_multi_3d_no_newton(class NeighList *, int, int, int);
+  void stencil_half_multi_2d_newton(class NeighList *, int, int, int);
+  void stencil_half_multi_3d_newton(class NeighList *, int, int, int);
+  void stencil_half_multi_2d_newton_tri(class NeighList *, int, int, int);
+  void stencil_half_multi_3d_newton_tri(class NeighList *, int, int, int);
+
+  void stencil_full_bin_2d(class NeighList *, int, int, int);
+  void stencil_full_ghost_bin_2d(class NeighList *, int, int, int);
+  void stencil_full_bin_3d(class NeighList *, int, int, int);
+  void stencil_full_ghost_bin_3d(class NeighList *, int, int, int);
+  void stencil_full_multi_2d(class NeighList *, int, int, int);
+  void stencil_full_multi_3d(class NeighList *, int, int, int);
+
+  // topology build functions
+
+  typedef void (Neighbor::*BondPtr)();   // ptrs to topology build functions
+
+  BondPtr bond_build;                 // ptr to bond list functions
+  void bond_all();                    // bond list with all bonds
+  void bond_template();               // bond list with templated bonds
+  void bond_partial();                // exclude certain bonds
+  void bond_check();
+
+  BondPtr angle_build;                // ptr to angle list functions
+  void angle_all();                   // angle list with all angles
+  void angle_template();              // angle list with templated bonds
+  void angle_partial();               // exclude certain angles
+  void angle_check();
+
+  BondPtr dihedral_build;             // ptr to dihedral list functions
+  void dihedral_all();                // dihedral list with all dihedrals
+  void dihedral_template();           // dihedral list with templated bonds
+  void dihedral_partial();            // exclude certain dihedrals
+  void dihedral_check(int, int **);
+
+  BondPtr improper_build;             // ptr to improper list functions
+  void improper_all();                // improper list with all impropers
+  void improper_template();           // improper list with templated bonds
+  void improper_partial();            // exclude certain impropers
+
+  // SSA neighboring for USER-DPD
+
+  int coord2ssa_airnum(double *);  // map atom coord to an AIR number
+
+  void half_bin_newton_ssa(NeighList *);
+  void half_from_full_newton_ssa(class NeighList *);
+  void stencil_half_bin_2d_ssa(class NeighList *, int, int, int);
+  void stencil_half_bin_3d_ssa(class NeighList *, int, int, int);
+
+  // find_special: determine if atom j is in special list of atom i
+  // if it is not, return 0
+  // if it is and special flag is 0 (both coeffs are 0.0), return -1
+  // if it is and special flag is 1 (both coeffs are 1.0), return 0
+  // if it is and special flag is 2 (otherwise), return 1,2,3
+  //   for which level of neighbor it is (and which coeff it maps to)
+
+  inline int find_special(const tagint *list, const int *nspecial,
+                          const tagint tag) const {
+    const int n1 = nspecial[0];
+    const int n2 = nspecial[1];
+    const int n3 = nspecial[2];
+
+    for (int i = 0; i < n3; i++) {
+      if (list[i] == tag) {
+        if (i < n1) {
+          if (special_flag[1] == 0) return -1;
+          else if (special_flag[1] == 1) return 0;
+          else return 1;
+        } else if (i < n2) {
+          if (special_flag[2] == 0) return -1;
+          else if (special_flag[2] == 1) return 0;
+          else return 2;
+        } else {
+          if (special_flag[3] == 0) return -1;
+          else if (special_flag[3] == 1) return 0;
+          else return 3;
+        }
+      }
+    }
+    return 0;
+  };
+};
+
+}
+
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Neighbor delay must be 0 or multiple of every setting
+
+The delay and every parameters set via the neigh_modify command are
+inconsistent.  If the delay setting is non-zero, then it must be a
+multiple of the every setting.
+
+E: Neighbor page size must be >= 10x the one atom setting
+
+This is required to prevent wasting too much memory.
+
+E: Invalid atom type in neighbor exclusion list
+
+Atom types must range from 1 to Ntypes inclusive.
+
+W: Neighbor exclusions used with KSpace solver may give inconsistent Coulombic energies
+
+This is because excluding specific pair interactions also excludes
+them from long-range interactions which may not be the desired effect.
+The special_bonds command handles this consistently by insuring
+excluded (or weighted) 1-2, 1-3, 1-4 interactions are treated
+consistently by both the short-range pair style and the long-range
+solver.  This is not done for exclusions of charged atom pairs via the
+neigh_modify exclude command.
+
+E: Neighbor include group not allowed with ghost neighbors
+
+This is a current restriction within LAMMPS.
+
+E: Neighbor multi not yet enabled for ghost neighbors
+
+This is a current restriction within LAMMPS.
+
+E: Neighbor multi not yet enabled for granular
+
+Self-explanatory.
+
+E: Neighbor multi not yet enabled for rRESPA
+
+Self-explanatory.
+
+E: Too many local+ghost atoms for neighbor list
+
+The number of nlocal + nghost atoms on a processor
+is limited by the size of a 32-bit integer with 2 bits
+removed for masking 1-2, 1-3, 1-4 neighbors.
+
+E: Trying to build an occasional neighbor list before initialization completed
+
+This is not allowed.  Source code caller needs to be modified.
+
+E: Domain too large for neighbor bins
+
+The domain has become extremely large so that neighbor bins cannot be
+used.  Most likely, one or more atoms have been blown out of the
+simulation box to a great distance.
+
+E: Cannot use neighbor bins - box size << cutoff
+
+Too many neighbor bins will be created.  This typically happens when
+the simulation box is very small in some dimension, compared to the
+neighbor cutoff.  Use the "nsq" style instead of "bin" style.
+
+E: Too many neighbor bins
+
+This is likely due to an immense simulation box that has blown up
+to a large size.
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Invalid group ID in neigh_modify command
+
+A group ID used in the neigh_modify command does not exist.
+
+E: Neigh_modify include group != atom_modify first group
+
+Self-explanatory.
+
+E: Neigh_modify exclude molecule requires atom attribute molecule
+
+Self-explanatory.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_INTEGRATE
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifndef LMP_INTEGRATE_H
+#define LMP_INTEGRATE_H
+
+#include "pointers.h"
+
+namespace LAMMPS_NS {
+
+class Integrate : protected Pointers {
+ public:
+  Integrate(class LAMMPS *, int, char **);
+  virtual ~Integrate();
+  virtual void init();
+  virtual void setup() = 0;
+  virtual void setup_minimal(int) = 0;
+  virtual void run(int) = 0;
+  virtual void cleanup() {}
+  virtual void reset_dt() {}
+  virtual bigint memory_usage() {return 0;}
+
+ public:
+  int eflag,vflag;                  // flags for energy/virial computation
+  int virial_style;                 // compute virial explicitly or implicitly
+  int external_force_clear;         // clear forces locally or externally
+
+  int nelist_global,nelist_atom;    // # of PE,virial computes to check
+  int nvlist_global,nvlist_atom;
+  class Compute **elist_global;     // lists of PE,virial Computes
+  class Compute **elist_atom;
+  class Compute **vlist_global;
+  class Compute **vlist_atom;
+
+  int pair_compute_flag;            // 0 if pair->compute is skipped
+  int kspace_compute_flag;          // 0 if kspace->compute is skipped
+
+  void ev_setup();
+  void ev_set(bigint);
+};
+
+}
+
+#endif
+/* ERROR/WARNING messages:
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifndef LMP_PAIR_H
+#define LMP_PAIR_H
+
+#include "pointers.h"
+#include "accelerator_kokkos.h"
+
+namespace LAMMPS_NS {
+
+class Pair : protected Pointers {
+  friend class AngleSDK;
+  friend class AngleSDKOMP;
+  friend class BondQuartic;
+  friend class BondQuarticOMP;
+  friend class DihedralCharmm;
+  friend class DihedralCharmmOMP;
+  friend class FixGPU;
+  friend class FixOMP;
+  friend class ThrOMP;
+  friend class Info;
+
+ public:
+  static int instance_total;     // # of Pair classes ever instantiated
+
+  double eng_vdwl,eng_coul;      // accumulated energies
+  double virial[6];              // accumulated virial
+  double *eatom,**vatom;         // accumulated per-atom energy/virial
+
+  double cutforce;               // max cutoff for all atom pairs
+  double **cutsq;                // cutoff sq for each atom pair
+  int **setflag;                 // 0/1 = whether each i,j has been set
+
+  int comm_forward;              // size of forward communication (0 if none)
+  int comm_reverse;              // size of reverse communication (0 if none)
+  int comm_reverse_off;          // size of reverse comm even if newton off
+
+  int single_enable;             // 1 if single() routine exists
+  int restartinfo;               // 1 if pair style writes restart info
+  int respa_enable;              // 1 if inner/middle/outer rRESPA routines
+  int one_coeff;                 // 1 if allows only one coeff * * call
+  int manybody_flag;             // 1 if a manybody potential
+  int no_virial_fdotr_compute;   // 1 if does not invoke virial_fdotr_compute()
+  int writedata;                 // 1 if writes coeffs to data file
+  int ghostneigh;                // 1 if pair style needs neighbors of ghosts
+  double **cutghost;             // cutoff for each ghost pair
+
+  int ewaldflag;                 // 1 if compatible with Ewald solver
+  int pppmflag;                  // 1 if compatible with PPPM solver
+  int msmflag;                   // 1 if compatible with MSM solver
+  int dispersionflag;            // 1 if compatible with LJ/dispersion solver
+  int tip4pflag;                 // 1 if compatible with TIP4P solver
+  int dipoleflag;                // 1 if compatible with dipole solver
+  int reinitflag;                // 1 if compatible with fix adapt and alike
+
+  int tail_flag;                 // pair_modify flag for LJ tail correction
+  double etail,ptail;            // energy/pressure tail corrections
+  double etail_ij,ptail_ij;
+
+  int evflag;                    // energy,virial settings
+  int eflag_either,eflag_global,eflag_atom;
+  int vflag_either,vflag_global,vflag_atom;
+
+  int ncoultablebits;            // size of Coulomb table, accessed by KSpace
+  int ndisptablebits;            // size of dispersion table
+  double tabinnersq;
+  double tabinnerdispsq;
+  double *rtable,*drtable,*ftable,*dftable,*ctable,*dctable;
+  double *etable,*detable,*ptable,*dptable,*vtable,*dvtable;
+  double *rdisptable, *drdisptable, *fdisptable, *dfdisptable;
+  double *edisptable, *dedisptable;
+  int ncoulshiftbits,ncoulmask;
+  int ndispshiftbits, ndispmask;
+
+  int nextra;                    // # of extra quantities pair style calculates
+  double *pvector;               // vector of extra pair quantities
+
+  int single_extra;              // number of extra single values calculated
+  double *svector;               // vector of extra single quantities
+
+  class NeighList *list;         // standard neighbor list used by most pairs
+  class NeighList *listhalf;     // half list used by some pairs
+  class NeighList *listfull;     // full list used by some pairs
+  class NeighList *listgranhistory;  // granular history list used by some pairs
+  class NeighList *listinner;    // rRESPA lists used by some pairs
+  class NeighList *listmiddle;
+  class NeighList *listouter;
+
+  unsigned int datamask;
+  unsigned int datamask_ext;
+
+  int allocated;                 // 0/1 = whether arrays are allocated
+                                 //       public so external driver can check
+  int compute_flag;              // 0 if skip compute()
+
+  // KOKKOS host/device flag and data masks
+
+  ExecutionSpace execution_space;
+  unsigned int datamask_read,datamask_modify;
+
+  Pair(class LAMMPS *);
+  virtual ~Pair();
+
+  // top-level Pair methods
+
+  void init();
+  virtual void reinit();
+  virtual void setup() {}
+  double mix_energy(double, double, double, double);
+  double mix_distance(double, double);
+  void write_file(int, char **);
+  void init_bitmap(double, double, int, int &, int &, int &, int &);
+  virtual void modify_params(int, char **);
+  void compute_dummy(int, int);
+
+  // need to be public, so can be called by pair_style reaxc
+
+  void v_tally(int, double *, double *);
+  void ev_tally(int, int, int, int, double, double, double,
+                double, double, double);
+  void ev_tally3(int, int, int, double, double,
+                 double *, double *, double *, double *);
+  void v_tally3(int, int, int, double *, double *, double *, double *);
+  void v_tally4(int, int, int, int, double *, double *, double *,
+                double *, double *, double *);
+  void ev_tally_xyz(int, int, int, int, double, double,
+                    double, double, double, double, double, double);
+
+  // general child-class methods
+
+  virtual void compute(int, int) = 0;
+  virtual void compute_inner() {}
+  virtual void compute_middle() {}
+  virtual void compute_outer(int, int) {}
+
+  virtual double single(int, int, int, int,
+                        double, double, double,
+			double& fforce) {
+    fforce = 0.0;
+    return 0.0;
+  }
+
+  virtual void settings(int, char **) = 0;
+  virtual void coeff(int, char **) = 0;
+
+  virtual void init_style();
+  virtual void init_list(int, class NeighList *);
+  virtual double init_one(int, int) {return 0.0;}
+
+  virtual void init_tables(double, double *);
+  virtual void init_tables_disp(double);
+  virtual void free_tables();
+  virtual void free_disp_tables();
+
+  virtual void write_restart(FILE *) {}
+  virtual void read_restart(FILE *) {}
+  virtual void write_restart_settings(FILE *) {}
+  virtual void read_restart_settings(FILE *) {}
+  virtual void write_data(FILE *) {}
+  virtual void write_data_all(FILE *) {}
+
+  virtual int pack_forward_comm(int, int *, double *, int, int *) {return 0;}
+  virtual void unpack_forward_comm(int, int, double *) {}
+  virtual int pack_forward_comm_kokkos(int, DAT::tdual_int_2d, int, DAT::tdual_xfloat_1d&, int, int *) {return 0;};
+  virtual void unpack_forward_comm_kokkos(int, int, DAT::tdual_xfloat_1d&) {}
+  virtual int pack_reverse_comm(int, int, double *) {return 0;}
+  virtual void unpack_reverse_comm(int, int *, double *) {}
+  virtual double memory_usage();
+
+  // specific child-class methods for certain Pair styles
+
+  virtual void *extract(const char *, int &) {return NULL;}
+  virtual void swap_eam(double *, double **) {}
+  virtual void reset_dt() {}
+  virtual void min_xf_pointers(int, double **, double **) {}
+  virtual void min_xf_get(int) {}
+  virtual void min_x_set(int) {}
+
+  virtual unsigned int data_mask() {return datamask;}
+  virtual unsigned int data_mask_ext() {return datamask_ext;}
+
+  // management of callbacks to be run from ev_tally()
+
+ public:
+  int num_tally_compute;
+  class Compute **list_tally_compute;
+ public:
+  void add_tally_callback(class Compute *);
+  void del_tally_callback(class Compute *);
+
+ public:
+  int instance_me;        // which Pair class instantiation I am
+
+  enum{GEOMETRIC,ARITHMETIC,SIXTHPOWER};   // mixing options
+
+  int special_lj[4];           // copied from force->special_lj for Kokkos
+
+  int suffix_flag;             // suffix compatibility flag
+
+                                       // pair_modify settings
+  int offset_flag,mix_flag;            // flags for offset and mixing
+  double tabinner;                     // inner cutoff for Coulomb table
+  double tabinner_disp;                 // inner cutoff for dispersion table
+
+  // custom data type for accessing Coulomb tables
+
+  typedef union {int i; float f;} union_int_float_t;
+
+  double THIRD;
+
+  int vflag_fdotr;
+  int maxeatom,maxvatom;
+
+  int copymode;   // if set, do not deallocate during destruction
+                  // required when classes are used as functors by Kokkos
+
+  virtual void ev_setup(int, int);
+  void ev_unset();
+  void ev_tally_full(int, double, double, double, double, double, double);
+  void ev_tally_xyz_full(int, double, double,
+                         double, double, double, double, double, double);
+  void ev_tally4(int, int, int, int, double,
+                 double *, double *, double *, double *, double *, double *);
+  void ev_tally_tip4p(int, int *, double *, double, double);
+  void v_tally2(int, int, double, double *);
+  void v_tally_tensor(int, int, int, int,
+                      double, double, double, double, double, double);
+  void virial_fdotr_compute();
+
+  // union data struct for packing 32-bit and 64-bit ints into double bufs
+  // see atom_vec.h for documentation
+
+  union ubuf {
+    double d;
+    int64_t i;
+    ubuf(double arg) : d(arg) {}
+    ubuf(int64_t arg) : i(arg) {}
+    ubuf(int arg) : i(arg) {}
+  };
+
+  inline int sbmask(int j) {
+    return j >> SBBITS & 3;
+  }
+};
+
+}
+
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Too many total bits for bitmapped lookup table
+
+Table size specified via pair_modify command is too large.  Note that
+a value of N generates a 2^N size table.
+
+E: Cannot have both pair_modify shift and tail set to yes
+
+These 2 options are contradictory.
+
+E: Cannot use pair tail corrections with 2d simulations
+
+The correction factors are only currently defined for 3d systems.
+
+W: Using pair tail corrections with nonperiodic system
+
+This is probably a bogus thing to do, since tail corrections are
+computed by integrating the density of a periodic system out to
+infinity.
+
+W: Using pair tail corrections with pair_modify compute no
+
+The tail corrections will thus not be computed.
+
+W: Using pair potential shift with pair_modify compute no
+
+The shift effects will thus not be computed.
+
+W: Using a manybody potential with bonds/angles/dihedrals and special_bond exclusions
+
+This is likely not what you want to do.  The exclusion settings will
+eliminate neighbors in the neighbor list, which the manybody potential
+needs to calculated its terms correctly.
+
+E: All pair coeffs are not set
+
+All pair coefficients must be set in the data file or by the
+pair_coeff command before running a simulation.
+
+E: Fix adapt interface to this pair style not supported
+
+New coding for the pair style would need to be done.
+
+E: Pair style requires a KSpace style
+
+No kspace style is defined.
+
+E: Cannot yet use compute tally with Kokkos
+
+This feature is not yet supported.
+
+E: Pair style does not support pair_write
+
+The pair style does not have a single() function, so it can
+not be invoked by pair write.
+
+E: Invalid atom types in pair_write command
+
+Atom types must range from 1 to Ntypes inclusive.
+
+E: Invalid style in pair_write command
+
+Self-explanatory.  Check the input script.
+
+E: Invalid cutoffs in pair_write command
+
+Inner cutoff must be larger than 0.0 and less than outer cutoff.
+
+E: Cannot open pair_write file
+
+The specified output file for pair energies and forces cannot be
+opened.  Check that the path and name are correct.
+
+E: Bitmapped lookup tables require int/float be same size
+
+Cannot use pair tables on this machine, because of word sizes.  Use
+the pair_modify command with table 0 instead.
+
+W: Table inner cutoff >= outer cutoff
+
+You specified an inner cutoff for a Coulombic table that is longer
+than the global cutoff.  Probably not what you wanted.
+
+E: Too many exponent bits for lookup table
+
+Table size specified via pair_modify command does not work with your
+machine's floating point representation.
+
+E: Too many mantissa bits for lookup table
+
+Table size specified via pair_modify command does not work with your
+machine's floating point representation.
+
+E: Too few bits for lookup table
+
+Table size specified via pair_modify command does not work with your
+machine's floating point representation.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_HYBRID
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(hybrid,PairHybrid)
+
+#else
+
+#ifndef LMP_PAIR_HYBRID_H
+#define LMP_PAIR_HYBRID_H
+
+#include <stdio.h>
+#include "pair.h"
+
+namespace LAMMPS_NS {
+
+class PairHybrid : public Pair {
+  friend class FixGPU;
+  friend class FixIntel;
+  friend class FixOMP;
+  friend class Force;
+  friend class Respa;
+ public:
+  PairHybrid(class LAMMPS *);
+  virtual ~PairHybrid();
+  void compute(int, int);
+  void settings(int, char **);
+  virtual void coeff(int, char **);
+  void init_style();
+  double init_one(int, int);
+  void setup();
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  double single(int, int, int, int, double, double, double, double &);
+  void modify_params(int narg, char **arg);
+  double memory_usage();
+
+  void compute_inner();
+  void compute_middle();
+  void compute_outer(int, int);
+  void *extract(const char *, int &);
+  void reset_dt();
+
+  int check_ijtype(int, int, char *);
+
+ public:
+  int nstyles;                  // # of sub-styles
+  Pair **styles;                // list of Pair style classes
+  char **keywords;              // style name of each Pair style
+  int *multiple;                // 0 if style used once, else Mth instance
+
+  int outerflag;                // toggle compute() when invoked by outer()
+  int respaflag;                // 1 if different substyles are assigned to
+                                // different r-RESPA levels
+
+  int **nmap;                   // # of sub-styles itype,jtype points to
+  int ***map;                   // list of sub-styles itype,jtype points to
+  double **special_lj;          // list of per style LJ exclusion factors
+  double **special_coul;        // list of per style Coulomb exclusion factors
+
+  void allocate();
+  void flags();
+
+  void modify_special(int, int, char**);
+  double *save_special();
+  void set_special(int);
+  void restore_special(double *);
+
+  virtual void modify_requests();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Cannot yet use pair hybrid with Kokkos
+
+This feature is not yet supported.
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Pair style hybrid cannot have hybrid as an argument
+
+Self-explanatory.
+
+E: Pair style hybrid cannot have none as an argument
+
+Self-explanatory.
+
+E: Incorrect args for pair coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+E: Pair coeff for hybrid has invalid style
+
+Style in pair coeff must have been listed in pair_style command.
+
+E: Pair hybrid sub-style is not used
+
+No pair_coeff command used a sub-style specified in the pair_style
+command.
+
+E: Pair_modify special setting for pair hybrid incompatible with global special_bonds setting
+
+Cannot override a setting of 0.0 or 1.0 or change a setting between
+0.0 and 1.0.
+
+E: All pair coeffs are not set
+
+All pair coefficients must be set in the data file or by the
+pair_coeff command before running a simulation.
+
+E: Invoked pair single on pair style none
+
+A command (e.g. a dump) attempted to invoke the single() function on a
+pair style none, which is illegal.  You are probably attempting to
+compute per-atom quantities with an undefined pair style.
+
+E: Pair hybrid sub-style does not support single call
+
+You are attempting to invoke a single() call on a pair style
+that doesn't support it.
+
+E: Pair hybrid single calls do not support per sub-style special bond values
+
+Self-explanatory.
+
+E: Unknown pair_modify hybrid sub-style
+
+The choice of sub-style is unknown.
+
+E: Coulomb cutoffs of pair hybrid sub-styles do not match
+
+If using a Kspace solver, all Coulomb cutoffs of long pair styles must
+be the same.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CUT_COUL_LONG
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(lj/cut/coul/long,PairLJCutCoulLong)
+
+#else
+
+#ifndef LMP_PAIR_LJ_CUT_COUL_LONG_H
+#define LMP_PAIR_LJ_CUT_COUL_LONG_H
+
+#include "pair.h"
+
+namespace LAMMPS_NS {
+
+class PairLJCutCoulLong : public Pair {
+
+ public:
+  PairLJCutCoulLong(class LAMMPS *);
+  virtual ~PairLJCutCoulLong();
+  virtual void compute(int, int);
+  virtual void settings(int, char **);
+  void coeff(int, char **);
+  virtual void init_style();
+  void init_list(int, class NeighList *);
+  virtual double init_one(int, int);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  virtual void write_restart_settings(FILE *);
+  virtual void read_restart_settings(FILE *);
+  void write_data(FILE *);
+  void write_data_all(FILE *);
+  virtual double single(int, int, int, int, double, double, double, double &);
+
+  void compute_inner();
+  void compute_middle();
+  virtual void compute_outer(int, int);
+  virtual void *extract(const char *, int &);
+
+ public:
+  double cut_lj_global;
+  double **cut_lj,**cut_ljsq;
+  double cut_coul,cut_coulsq;
+  double **epsilon,**sigma;
+  double **lj1,**lj2,**lj3,**lj4,**offset;
+  double *cut_respa;
+  double qdist;             // TIP4P distance from O site to negative charge
+  double g_ewald;
+
+  virtual void allocate();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Incorrect args for pair coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+E: Pair style lj/cut/coul/long requires atom attribute q
+
+The atom style defined does not have this attribute.
+
+E: Pair style requires a KSpace style
+
+No kspace style is defined.
+
+E: Pair cutoff < Respa interior cutoff
+
+One or more pairwise cutoffs are too short to use with the specified
+rRESPA cutoffs.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CUT_COUL_CUT
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(lj/cut/coul/cut,PairLJCutCoulCut)
+
+#else
+
+#ifndef LMP_PAIR_LJ_CUT_COUL_CUT_H
+#define LMP_PAIR_LJ_CUT_COUL_CUT_H
+
+#include "pair.h"
+
+namespace LAMMPS_NS {
+
+class PairLJCutCoulCut : public Pair {
+ public:
+  PairLJCutCoulCut(class LAMMPS *);
+  virtual ~PairLJCutCoulCut();
+  virtual void compute(int, int);
+  virtual void settings(int, char **);
+  void coeff(int, char **);
+  void init_style();
+  double init_one(int, int);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  virtual void write_restart_settings(FILE *);
+  virtual void read_restart_settings(FILE *);
+  void write_data(FILE *);
+  void write_data_all(FILE *);
+  virtual double single(int, int, int, int, double, double, double, double &);
+  void *extract(const char *, int &);
+
+ public:
+  double cut_lj_global,cut_coul_global;
+  double **cut_lj,**cut_ljsq;
+  double **cut_coul,**cut_coulsq;
+  double **epsilon,**sigma;
+  double **lj1,**lj2,**lj3,**lj4,**offset;
+
+  virtual void allocate();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Incorrect args for pair coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+E: Pair style lj/cut/coul/cut requires atom attribute q
+
+The atom style defined does not have this attribute.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CHARMM_COUL_LONG
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(lj/charmm/coul/long,PairLJCharmmCoulLong)
+
+#else
+
+#ifndef LMP_PAIR_LJ_CHARMM_COUL_LONG_H
+#define LMP_PAIR_LJ_CHARMM_COUL_LONG_H
+
+#include "pair.h"
+
+namespace LAMMPS_NS {
+
+class PairLJCharmmCoulLong : public Pair {
+ public:
+  PairLJCharmmCoulLong(class LAMMPS *);
+  virtual ~PairLJCharmmCoulLong();
+
+  virtual void compute(int, int);
+  virtual void settings(int, char **);
+  void coeff(int, char **);
+  virtual void init_style();
+  void init_list(int, class NeighList *);
+  virtual double init_one(int, int);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  void write_restart_settings(FILE *);
+  void read_restart_settings(FILE *);
+  void write_data(FILE *);
+  void write_data_all(FILE *);
+  virtual double single(int, int, int, int, double, double, double, double &);
+
+  void compute_inner();
+  void compute_middle();
+  virtual void compute_outer(int, int);
+  virtual void *extract(const char *, int &);
+
+ public:
+  int implicit;
+  double cut_lj_inner,cut_lj;
+  double cut_lj_innersq,cut_ljsq;
+  double cut_coul,cut_coulsq;
+  double cut_bothsq;
+  double denom_lj;
+  double **epsilon,**sigma,**eps14,**sigma14;
+  double **lj1,**lj2,**lj3,**lj4,**offset;
+  double **lj14_1,**lj14_2,**lj14_3,**lj14_4;
+  double *cut_respa;
+  double g_ewald;
+
+  virtual void allocate();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Incorrect args for pair coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+E: Pair style lj/charmm/coul/long requires atom attribute q
+
+The atom style defined does not have these attributes.
+
+E: Pair inner cutoff >= Pair outer cutoff
+
+The specified cutoffs for the pair style are inconsistent.
+
+E: Pair cutoff < Respa interior cutoff
+
+One or more pairwise cutoffs are too short to use with the specified
+rRESPA cutoffs.
+
+E: Pair inner cutoff < Respa interior cutoff
+
+One or more pairwise cutoffs are too short to use with the specified
+rRESPA cutoffs.
+
+E: Pair style requires a KSpace style
+
+No kspace style is defined.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CHARMM_COUL_CHARMM
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(lj/charmm/coul/charmm,PairLJCharmmCoulCharmm)
+
+#else
+
+#ifndef LMP_PAIR_LJ_CHARMM_COUL_CHARMM_H
+#define LMP_PAIR_LJ_CHARMM_COUL_CHARMM_H
+
+#include "pair.h"
+
+namespace LAMMPS_NS {
+
+class PairLJCharmmCoulCharmm : public Pair {
+ public:
+  PairLJCharmmCoulCharmm(class LAMMPS *);
+  virtual ~PairLJCharmmCoulCharmm();
+  virtual void compute(int, int);
+  virtual void settings(int, char **);
+  void coeff(int, char **);
+  virtual void init_style();
+  virtual double init_one(int, int);
+  void write_restart(FILE *);
+  void read_restart(FILE *);
+  void write_restart_settings(FILE *);
+  void read_restart_settings(FILE *);
+  void write_data(FILE *);
+  void write_data_all(FILE *);
+  virtual double single(int, int, int, int, double, double, double, double &);
+  virtual void *extract(const char *, int &);
+
+ public:
+  int implicit;
+  double cut_lj_inner,cut_lj,cut_coul_inner,cut_coul;
+  double cut_lj_innersq,cut_ljsq,cut_coul_innersq,cut_coulsq,cut_bothsq;
+  double denom_lj,denom_coul;
+  double **epsilon,**sigma,**eps14,**sigma14;
+  double **lj1,**lj2,**lj3,**lj4;
+  double **lj14_1,**lj14_2,**lj14_3,**lj14_4;
+
+  virtual void allocate();
+};
+
+}
+
+#endif
+#endif
+
+/* ERROR/WARNING messages:
+
+E: Illegal ... command
+
+Self-explanatory.  Check the input script syntax and compare to the
+documentation for the command.  You can use -echo screen as a
+command-line option when running LAMMPS to see the offending line.
+
+E: Incorrect args for pair coefficients
+
+Self-explanatory.  Check the input script or data file.
+
+E: Pair style lj/charmm/coul/charmm requires atom attribute q
+
+The atom style defined does not have these attributes.
+
+E: Pair inner cutoff >= Pair outer cutoff
+
+The specified cutoffs for the pair style are inconsistent.
+
+*/
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CUT_COUL_LONG_OMP
+/* -*- c++ -*- ----------------------------------------------------------
+   LAMMPS - Large-scale Atomic/Molecular Massively Parallel Simulator
+   http://lammps.sandia.gov, Sandia National Laboratories
+   Steve Plimpton, sjplimp@sandia.gov
+
+   Copyright (2003) Sandia Corporation.  Under the terms of Contract
+   DE-AC04-94AL85000 with Sandia Corporation, the U.S. Government retains
+   certain rights in this software.  This software is distributed under
+   the GNU General Public License.
+
+   See the README file in the top-level LAMMPS directory.
+------------------------------------------------------------------------- */
+
+/* ----------------------------------------------------------------------
+   Contributing author: Axel Kohlmeyer (Temple U)
+------------------------------------------------------------------------- */
+
+#ifdef PAIR_CLASS
+
+PairStyle(lj/cut/coul/long/omp,PairLJCutCoulLongOMP)
+
+#else
+
+#ifndef LMP_PAIR_LJ_CUT_COUL_LONG_OMP_H
+#define LMP_PAIR_LJ_CUT_COUL_LONG_OMP_H
+
+#include "pair_lj_cut_coul_long.h"
+#include "thr_omp.h"
+
+namespace LAMMPS_NS {
+
+class PairLJCutCoulLongOMP : public PairLJCutCoulLong, public ThrOMP {
+
+ public:
+  PairLJCutCoulLongOMP(class LAMMPS *);
+
+  virtual void compute(int, int);
+  virtual double memory_usage();
+
+ public:
+  template <int EVFLAG, int EFLAG, int NEWTON_PAIR>
+  void eval(int ifrom, int ito, ThrData * const thr);
+};
+
+}
+
+#endif
+#endif
+#endif
+
+/*----------------------------------------------------------*/
+
+#ifdef _CRACKER_PAIR_LJ_CUT_COUL_LONG_GPU
+#endif
+
+/*----------------------------------------------------------*/
