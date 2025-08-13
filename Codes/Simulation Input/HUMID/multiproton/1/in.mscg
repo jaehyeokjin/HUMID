@@ -1,0 +1,37 @@
+# MeOH with Neopentane Simulations
+
+units		real
+atom_style	full
+newton		off
+boundary        p p p
+ 
+read_data 	data.mscg
+
+pair_style     table_ucg_hydronium spline 1000 state_setting.txt
+
+pair_coeff	2   2	fm.table	WAT_WAT
+pair_coeff      1   2   fm.table  	WAT_HYD
+pair_coeff      1   1   fm.table  	HYD_HYD
+
+
+neighbor        2.0 multi
+neigh_modify  	delay 0
+
+variable        input index in.mscg
+variable        sname index mscg
+
+timestep        1.0
+velocity        all create 298.0 4928459 rot yes dist gaussian
+fix             3 all langevin 298.0 298.0 36.30509559471865 699483
+fix             5 all nve
+compute         msd all msd
+thermo          500
+thermo_style    custom step etotal ke temp pe ebond eangle edihed eimp evdwl ecoul elong press vol c_msd[4]
+thermo_modify   line multi
+restart         100000 ${sname}_nvt.*.restart
+dump            1 all custom 1 ${sname}_nvt.lammpstrj id type x y z fx fy fz
+dump_modify     1 sort id
+run             1000000
+unfix           3
+unfix		5
+undump          1
