@@ -9,7 +9,10 @@ Proton transport is a fundamental process in chemistry, biology, and materials s
 
 HUMID uses an internal state-based approach, analogous to the Multiscale Empirical Valence Bond (MS-EVB) method, to capture the reactive proton hopping (*Grotthuss mechanism*). By representing molecules as CG sites with distinct *hydronium-like* and *water-like* internal states, the model can simulate chemical identity changes on-the-fly. This approach allows for the accurate reproduction of structural and dynamical properties, including accelerated proton diffusion, at a fraction of the computational cost of traditional atomistic simulations.
 
-This repository contains the source codes, simulation inputs, analysis scripts, and results associated with the development and validation of the HUMID model.
+This repository contains the source codes, simulation inputs, analysis scripts, and results associated with the development and validation of the HUMID model.  
+
+For the full MD trajectory files, please refer to the Zenodo repository  
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.16863477.svg)](https://doi.org/10.5281/zenodo.16863477)
 
 ---
 
