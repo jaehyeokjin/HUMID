@@ -1,6 +1,5 @@
-<p align="center">
-  <img src="https://jinjaehyeok.wordpress.com/wp-content/uploads/2025/08/humid_toc.jpg" alt="HUMID TOC" width="500">
-</p>
+![HUMID TOC](https://jinjaehyeok.wordpress.com/wp-content/uploads/2025/08/humid_toc.png)
+
 # HUMID: Hydronium Ultra-coarse-grained Model with Improved Dynamics
 
 *A reactive bottom-up coarse-grained model for simulating hydrated proton transport with near-atomistic accuracy and a computational speed-up of three orders of magnitude.*
