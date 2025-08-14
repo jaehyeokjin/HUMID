@@ -97,4 +97,44 @@ Final friction coefficient `η` ensures CG dynamics match atomistic timescales.
 
 ## 🗂️ Repository Structure
 - Refer to directory file
+├── Codes/
+│ ├── Analysis Codes/ # Scripts for analyzing simulation output
+│ ├── Coarse-graining/ # Scripts for the CG mapping process
+│ └── Parametrization/ # Scripts and data for parametrizing the HUMID model
+├── Figure Data/ # Raw data used to generate figures in the publication
+├── Figures/ # Final figures from the publication
+├── LAMMPS Codes/
+│ ├── LAMMPS Custom Pair Style for HUMID/ # Source code for the custom LAMMPS build
+│ └── LAMMPS MS-EVB RAPTOR/ # Source code for the atomistic MS-EVB simulations
+├── README.md # This file
+├── Results/ # Processed results from simulations
+├── Simulation Input/ # LAMMPS input scripts for running simulations
+└── Videos/ # Movies visualizing simulation trajectories
+
+---
+
+## 📈 Results
+
+The key findings of this work are summarized in the `Results/` directory, which contains processed data for:
+
+* **Structure** – RDFs and angular distributions confirming that HUMID captures the distinct local structure of the hydrated proton.
+* **Dynamics** – MSD plots showing the correct accelerated diffusion of hydronium and correlation functions quantifying the Grotthuss shuttling mechanism.
+* **Interactions** – Optimized state-wise potential energy curves derived from the bottom-up procedure.
+
+---
+
+## 🎓 Citation
+
+If you use this model or any part of the code in your research, please cite our paper:
+
+Jin, J., Li, Z., & Voth, G. A. (2025). *Systematic Bottom-Up Coarse-Graining of Hydrated Excess Proton Transport Across Scales*. (Preprint).
+
+```latex
+@article{jin2025humid,
+  title={Systematic Bottom-Up Coarse-Graining of Hydrated Excess Proton Transport Across Scales},
+  author={Jin, Jaehyeok and Li, Zhefu and Voth, Gregory A.},
+  journal={arXiv},
+  year={2025},
+  publisher={Will be Updated Soon}
+}
 
