@@ -113,6 +113,7 @@ Final friction coefficient `η` ensures CG dynamics match atomistic timescales.
 ├── Results/                        # Processed results from simulations
 ├── Simulation Input/               # LAMMPS input scripts for running simulations
 └── Videos/                         # Movies visualizing simulation trajectories
+```
 
 ---
 
