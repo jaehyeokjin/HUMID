@@ -1,4 +1,4 @@
-![HUMID TOC](https://jinjaehyeok.wordpress.com/wp-content/uploads/2025/08/humid_toc.png)
+![HUMID TOC](https://jinjaehyeok.wordpress.com/wp-content/uploads/2025/08/humid_toc-1.jpg)
 
 # HUMID: Hydronium Ultra-coarse-grained Model with Improved Dynamics
 
