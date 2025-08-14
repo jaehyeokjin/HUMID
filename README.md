@@ -99,19 +99,21 @@ Final friction coefficient `η` ensures CG dynamics match atomistic timescales.
 ---
 
 ## 🗂️ Repository Structure: Refer to directory file for the detailed tree
+```text
 ├── Codes/
-│ ├── Analysis Codes/ # Scripts for analyzing simulation output
-│ ├── Coarse-graining/ # Scripts for the CG mapping process
-│ └── Parametrization/ # Scripts and data for parametrizing the HUMID model
-├── Figure Data/ # Raw data used to generate figures in the publication
-├── Figures/ # Final figures from the publication
+│   ├── Analysis Codes/             # Scripts for analyzing simulation output
+│   ├── Coarse-graining/            # Scripts for the CG mapping process
+│   └── Parametrization/            # Scripts and data for parametrizing the HUMID model
+├── Figure Data/                    # Raw data used to generate figures in the publication
+├── Figures/                        # Final figures from the publication
 ├── LAMMPS Codes/
-│ ├── LAMMPS Custom Pair Style for HUMID/ # Source code for the custom LAMMPS build
-│ └── LAMMPS MS-EVB RAPTOR/ # Source code for the atomistic MS-EVB simulations
-├── README.md # This file
-├── Results/ # Processed results from simulations
-├── Simulation Input/ # LAMMPS input scripts for running simulations
-└── Videos/ # Movies visualizing simulation trajectories
+│   ├── LAMMPS Custom Pair Style for HUMID/ # Source code for the custom LAMMPS build
+│   └── LAMMPS MS-EVB RAPTOR/       # Source code for the atomistic MS-EVB simulations
+├── README.md                       # This file
+├── Results/                        # Processed results from simulations
+├── Simulation Input/               # LAMMPS input scripts for running simulations
+└── Videos/                         # Movies visualizing simulation trajectories
+
 ---
 
 ## 📈 Results
