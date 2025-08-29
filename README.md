@@ -135,14 +135,17 @@ The key findings of this work are summarized in the `Results/` directory, which 
 
 If you use this model or any part of the code in your research, please cite our paper:
 
-Jin, J., Li, Z., & Voth, G. A. (2025). *Systematic Bottom-Up Coarse-Graining of Hydrated Excess Proton Transport Across Scales*. (Preprint).
+Jin, J., Li, Z., & Voth, G. A. (2025). *Systematic Bottom-Up Coarse-Graining of Hydrated Excess Proton Transport Across Scales*. ChemRxiv. https://doi.org/10.26434/chemrxiv-2025-4dh7m
+
+[![DOI](https://img.shields.io/badge/DOI-10.26434%2Fchemrxiv--2025--4dh7m-blue.svg)](https://doi.org/10.26434/chemrxiv-2025-4dh7m)
 
 ```latex
 @article{jin2025humid,
   title={Systematic Bottom-Up Coarse-Graining of Hydrated Excess Proton Transport Across Scales},
   author={Jin, Jaehyeok and Li, Zhefu and Voth, Gregory A.},
-  journal={arXiv},
+  journal={ChemRxiv},
   year={2025},
-  publisher={Will be Updated Soon}
+  doi={10.26434/chemrxiv-2025-4dh7m},
+  url={https://doi.org/10.26434/chemrxiv-2025-4dh7m}
 }
 
