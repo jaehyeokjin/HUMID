@@ -8,7 +8,7 @@
 
 ---
 
-## 📜 Overview
+## Overview
 Proton transport is a fundamental process in chemistry, biology, and materials science. However, simulating this phenomenon at large scales is computationally expensive due to its reactive, quantum-mechanical nature. This project introduces **HUMID** (Hydronium Ultra-coarse-grained Model with Improved Dynamics), a novel bottom-up coarse-grained (CG) model that bridges the gap between quantum mechanics and mesoscopic simulations.
 
 HUMID uses an internal state-based approach, analogous to the Multiscale Empirical Valence Bond (MS-EVB) method, to capture the reactive proton hopping (*Grotthuss mechanism*). By representing molecules as CG sites with distinct *hydronium-like* and *water-like* internal states, the model can simulate chemical identity changes on-the-fly. This approach allows for the accurate reproduction of structural and dynamical properties, including accelerated proton diffusion, at a fraction of the computational cost of traditional atomistic simulations.
@@ -20,7 +20,7 @@ For the full MD trajectory files, please refer to the Zenodo repository
 
 ---
 
-## ✨ Key Features
+## Key Features
 - **Reactive Coarse-Graining**: The first bottom-up CG model to successfully simulate reactive proton transport by incorporating internal states.
 - **High Fidelity**: Faithfully reproduces key structural correlations (RDFs, angular distributions) and complex dynamical properties (anomalous diffusion, Grotthuss shuttling rates).
 - **Computational Efficiency**: Achieves up to a three-order-of-magnitude speed-up compared to reactive atomistic models like MS-EVB.
@@ -29,9 +29,9 @@ For the full MD trajectory files, please refer to the Zenodo repository
 
 ---
 
-## 💻 Usage Guide
+## Usage Guide
 
-### Step 1: Compilation ⚙️
+### Step 1: Compilation
 The HUMID model requires a custom version of **LAMMPS** that includes specialized pair styles for handling internal states. Both the custom LAMMPS for HUMID and the MS-EVB version (RAPTOR) are provided.
 
 **Navigate to the HUMID LAMMPS Source**  
@@ -51,7 +51,7 @@ This creates `lmp_midway1`, the executable for running coarse-grained simulation
 
 ---
 
-### Step 2: Running Simulations ▶️
+### Step 2: Running Simulations
 
 #### A. Single Proton (Primary Study)
 **Location:**  Simulation Input/HUMID/single-aqueous/
@@ -75,7 +75,7 @@ This creates `lmp_midway1`, the executable for running coarse-grained simulation
 
 ---
 
-### Step 3: Analysis 📊
+### Step 3: Analysis
 
 **Location:** Codes/Analysis Codes/  
 Organized by analysis type, with most scripts as compiled C++ executables.
@@ -102,7 +102,7 @@ Final friction coefficient `η` ensures CG dynamics match atomistic timescales.
 
 ---
 
-## 🗂️ Repository Structure: Refer to directory file for the detailed tree
+## Repository Structure: Refer to directory file for the detailed tree
 ```text
 ├── Codes/
 │   ├── Analysis Codes/             # Scripts for analyzing simulation output
@@ -121,7 +121,7 @@ Final friction coefficient `η` ensures CG dynamics match atomistic timescales.
 
 ---
 
-## 📈 Results
+## Results
 
 The key findings of this work are summarized in the `Results/` directory, which contains processed data for:
 
@@ -131,7 +131,7 @@ The key findings of this work are summarized in the `Results/` directory, which 
 
 ---
 
-## 🎓 Citation
+## Citation
 
 If you use this model or any part of the code in your research, please cite our paper:
 
